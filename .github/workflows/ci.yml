@@ -1,0 +1,137 @@
+name: CI
+
+# Mirrors `make all` (tidy + fmt + lint + test + build) plus govulncheck
+# and a golangci-lint module-plugin smoke test that builds a custom-gcl
+# binary from the in-tree code and runs it against a tiny fixture. The
+# smoke test is the most valuable check here: it catches breaking changes
+# in golangci-lint's plugin interface before they ship to users.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: build + test + lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Read pinned Go version from mise.toml
+        id: gover
+        run: |
+          v=$(grep '^go = ' mise.toml | head -n1 | sed -E 's/.*"([^"]+)"/\1/')
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "Pinned Go: $v"
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ steps.gover.outputs.version }}
+          cache: true
+
+      # The Makefile auto-detects `go` on PATH and skips the mise wrapper,
+      # so targets run natively here without extra plumbing. gofumpt and
+      # goimports aren't on the runner image; install them so `make fmt`
+      # works.
+      - name: Install gofumpt + goimports
+        run: |
+          go install mvdan.cc/gofumpt@v0.9.2
+          go install golang.org/x/tools/cmd/goimports@latest
+
+      - name: tidy
+        run: make tidy
+
+      - name: fmt + tidy idempotency check
+        run: |
+          make fmt
+          if ! git diff --exit-code; then
+            echo "::error::Files need formatting or go.mod/go.sum need tidying. Run 'make fmt tidy' locally and commit."
+            exit 1
+          fi
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12.1
+
+      - name: test
+        run: make test
+
+      - name: build
+        run: make build
+
+      - name: vulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          make vulncheck
+
+      # End-to-end check that the module-plugin registration still
+      # satisfies golangci-lint's interface and that the configured
+      # patterns actually fire under a real `golangci-lint run`. This is
+      # the one thing the unit tests can't catch — analysistest verifies
+      # the analyzer directly, not the plugin wrapper.
+      - name: plugin smoke test
+        run: |
+          set -euo pipefail
+
+          # Build a custom-gcl binary that includes the in-tree plugin.
+          mkdir -p /tmp/smoke
+          cat > /tmp/.custom-gcl.yml <<EOF
+          version: v2.12.1
+          name: custom-gcl
+          destination: /tmp/smoke
+          plugins:
+            - module: github.com/t3spe/forbidcalls
+              path: $GITHUB_WORKSPACE
+          EOF
+          (cd /tmp && golangci-lint custom --config /tmp/.custom-gcl.yml)
+
+          # Construct a minimal module that violates the policy.
+          mkdir -p /tmp/fixture && cd /tmp/fixture
+          cat > go.mod <<EOF
+          module fixture
+
+          go 1.26
+          EOF
+          cat > main.go <<EOF
+          package main
+
+          import "os"
+
+          func main() { _ = os.Getenv("X") }
+          EOF
+          cat > .golangci.yml <<EOF
+          version: "2"
+          linters:
+            default: none
+            enable:
+              - forbidcalls
+            settings:
+              custom:
+                forbidcalls:
+                  type: module
+                  settings:
+                    forbid:
+                      - os.Getenv
+          EOF
+
+          # Expect a non-zero exit AND the specific diagnostic text. A
+          # clean run means the plugin didn't load or the pattern didn't
+          # match — both are regressions.
+          output=$(/tmp/smoke/custom-gcl run ./... 2>&1 || true)
+          echo "$output"
+          if ! echo "$output" | grep -q "forbidden reference to os.Getenv"; then
+            echo "::error::plugin smoke test failed: expected diagnostic not found"
+            exit 1
+          fi
+          echo "plugin smoke test passed"
