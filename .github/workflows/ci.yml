@@ -94,7 +94,7 @@ jobs:
             - module: github.com/t3spe/forbidcalls
               path: $GITHUB_WORKSPACE
           EOF
-          (cd /tmp && golangci-lint custom --config /tmp/.custom-gcl.yml)
+          (cd /tmp && golangci-lint custom)
 
           # Construct a minimal module that violates the policy.
           mkdir -p /tmp/fixture && cd /tmp/fixture
