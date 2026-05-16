@@ -1,0 +1,7 @@
+/forbidcalls
+/cmd/forbidcalls/forbidcalls
+*.exe
+.idea/
+.vscode/
+coverage.out
+coverage.html

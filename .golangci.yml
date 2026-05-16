@@ -1,0 +1,32 @@
+version: "2"
+linters:
+  enable:
+    - bodyclose
+    - errorlint
+    - gocritic
+    - misspell
+    - unconvert
+  settings:
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - performance
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - testdata$
+formatters:
+  enable:
+    - gofumpt
+  settings:
+    gofumpt:
+      extra-rules: true
+  exclusions:
+    generated: lax
+    paths:
+      - testdata$
