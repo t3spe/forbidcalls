@@ -22,7 +22,7 @@ name: custom-gcl
 destination: ./bin
 plugins:
   - module: github.com/t3spe/forbidcalls
-    version: v0.1.0
+    version: v0.1.1
 ```
 
 Build a custom golangci-lint binary, then run it:
@@ -55,7 +55,7 @@ linters:
 ### As a standalone CLI
 
 ```sh
-go install github.com/t3spe/forbidcalls/cmd/forbidcalls@v0.1.0
+go install github.com/t3spe/forbidcalls/cmd/forbidcalls@v0.1.1
 ```
 
 Or from source:
