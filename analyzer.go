@@ -16,8 +16,15 @@ const ignoreDirective = "//forbidcalls:ignore"
 // NewAnalyzer builds an analyzer that reports references to APIs matching
 // any of the configured Forbid patterns. References include calls, value
 // captures (`f := os.Getenv`), and method values.
+//
+// Multiple rules are evaluated first-match-wins: once a reference matches
+// some rule (with the file not in that rule's exclude_files), a single
+// diagnostic fires and later rules are skipped for that reference.
 func NewAnalyzer(cfg Config) (*analysis.Analyzer, error) {
-	patterns, err := ParsePatterns(cfg.Forbid)
+	if err := cfg.Normalize(); err != nil {
+		return nil, err
+	}
+	rules, err := compileRules(cfg.Rules)
 	if err != nil {
 		return nil, err
 	}
@@ -26,12 +33,44 @@ func NewAnalyzer(cfg Config) (*analysis.Analyzer, error) {
 		Doc:      "flags references to forbidden functions, methods, or whole-package wildcards.",
 		Requires: []*analysis.Analyzer{inspect.Analyzer},
 		Run: func(pass *analysis.Pass) (any, error) {
-			return run(pass, patterns, cfg)
+			return run(pass, rules)
 		},
 	}, nil
 }
 
-func run(pass *analysis.Pass, patterns []Pattern, cfg Config) (any, error) {
+// compiledRule pairs a rule's parsed patterns with its exclude list and
+// optional name. Built once at analyzer construction; reused across
+// every analysis pass.
+type compiledRule struct {
+	name     string
+	patterns []Pattern
+	excludes []string
+}
+
+func compileRules(rules []Rule) ([]compiledRule, error) {
+	out := make([]compiledRule, 0, len(rules))
+	for i, r := range rules {
+		ps, err := ParsePatterns(r.Forbid)
+		if err != nil {
+			if r.Name != "" {
+				return nil, fmt.Errorf("rule %d (%q): %w", i, r.Name, err)
+			}
+			return nil, fmt.Errorf("rule %d: %w", i, err)
+		}
+		out = append(out, compiledRule{
+			name:     r.Name,
+			patterns: ps,
+			excludes: r.ExcludeFiles,
+		})
+	}
+	return out, nil
+}
+
+func (r compiledRule) fileExcluded(absPath string) bool {
+	return fileMatchesAny(absPath, r.excludes)
+}
+
+func run(pass *analysis.Pass, rules []compiledRule) (any, error) {
 	insp, _ := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	if insp == nil {
 		return nil, fmt.Errorf("inspect analyzer result missing")
@@ -47,19 +86,27 @@ func run(pass *analysis.Pass, patterns []Pattern, cfg Config) (any, error) {
 		}
 
 		pos := pass.Fset.Position(sel.Pos())
-		if cfg.FileExcluded(pos.Filename) {
-			return
-		}
 		if ignored[pos.Filename][pos.Line] {
 			return
 		}
 
-		for _, p := range patterns {
-			if matches(obj, p) {
-				pass.Reportf(sel.Pos(),
-					"forbidden reference to %s (pattern: %s)",
-					qualifiedName(obj), p.Raw)
-				return
+		for _, rule := range rules {
+			if rule.fileExcluded(pos.Filename) {
+				continue
+			}
+			for _, p := range rule.patterns {
+				if matches(obj, p) {
+					if rule.name != "" {
+						pass.Reportf(sel.Pos(),
+							"forbidden reference to %s (rule: %s, pattern: %s)",
+							qualifiedName(obj), rule.name, p.Raw)
+					} else {
+						pass.Reportf(sel.Pos(),
+							"forbidden reference to %s (pattern: %s)",
+							qualifiedName(obj), p.Raw)
+					}
+					return
+				}
 			}
 		}
 	})

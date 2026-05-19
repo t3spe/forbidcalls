@@ -22,7 +22,7 @@ name: custom-gcl
 destination: ./bin
 plugins:
   - module: github.com/t3spe/forbidcalls
-    version: v0.1.1
+    version: v0.2.0
 ```
 
 Build a custom golangci-lint binary, then run it:
@@ -55,7 +55,7 @@ linters:
 ### As a standalone CLI
 
 ```sh
-go install github.com/t3spe/forbidcalls/cmd/forbidcalls@v0.1.1
+go install github.com/t3spe/forbidcalls/cmd/forbidcalls@v0.2.0
 ```
 
 Or from source:
@@ -131,6 +131,36 @@ For a one-off escape (e.g. bootstrap before config is loaded), use the line dire
 ```go
 home := os.Getenv("HOME") //forbidcalls:ignore -- bootstrap path
 ```
+
+## Multiple rules
+
+When you want different forbid lists scoped to different parts of the codebase — e.g. "only `internal/store` may import `github.com/some/sqldriver`, but `internal/imap` is the only place allowed to touch `github.com/emersion/go-imap/v2`" — use the `rules:` form. Each rule has its own `forbid` + `exclude_files`:
+
+```yaml
+rules:
+  - name: sqldriver-only-in-store
+    forbid:
+      - github.com/some/sqldriver.*
+    exclude_files:
+      - internal/store/**
+
+  - name: imap-only-in-imap-pkg
+    forbid:
+      - github.com/emersion/go-imap/v2.*
+    exclude_files:
+      - internal/imap/**
+      - cmd/cleanup-tool/**
+```
+
+A file outside a rule's `exclude_files` that references something from that rule's `forbid` triggers a diagnostic. Each rule's exclude list is independent — exempting `internal/store/**` for the sqldriver rule does NOT exempt it from the imap rule.
+
+Rules are evaluated first-match-wins. The rule's `name` appears in the diagnostic so failures point at the responsible block:
+
+```
+internal/foo/bar.go:23:6: forbidden reference to github.com/emersion/go-imap/v2.Client (rule: imap-only-in-imap-pkg, pattern: github.com/emersion/go-imap/v2.*)
+```
+
+The legacy top-level `forbid` + `exclude_files` schema is still accepted (collapsed into a single anonymous rule), but mixing both forms in the same config is an error.
 
 ## Pattern syntax
 

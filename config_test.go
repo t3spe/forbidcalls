@@ -39,6 +39,57 @@ func TestParsePatterns(t *testing.T) {
 	}
 }
 
+func TestNormalize(t *testing.T) {
+	t.Run("legacy collapses to one rule", func(t *testing.T) {
+		c := Config{
+			Forbid:       []string{"os.Getenv"},
+			ExcludeFiles: []string{"vendor/**"},
+		}
+		if err := c.Normalize(); err != nil {
+			t.Fatal(err)
+		}
+		if len(c.Rules) != 1 {
+			t.Fatalf("Rules len = %d, want 1", len(c.Rules))
+		}
+		if c.Forbid != nil || c.ExcludeFiles != nil {
+			t.Errorf("legacy fields not cleared: Forbid=%v ExcludeFiles=%v", c.Forbid, c.ExcludeFiles)
+		}
+		if got, want := c.Rules[0].Forbid[0], "os.Getenv"; got != want {
+			t.Errorf("Rules[0].Forbid[0] = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("rules-only stays untouched", func(t *testing.T) {
+		c := Config{Rules: []Rule{{Name: "x", Forbid: []string{"os.Getenv"}}}}
+		if err := c.Normalize(); err != nil {
+			t.Fatal(err)
+		}
+		if len(c.Rules) != 1 || c.Rules[0].Name != "x" {
+			t.Errorf("rules altered unexpectedly: %+v", c.Rules)
+		}
+	})
+
+	t.Run("mixed config rejected", func(t *testing.T) {
+		c := Config{
+			Forbid: []string{"os.Getenv"},
+			Rules:  []Rule{{Name: "x", Forbid: []string{"os.LookupEnv"}}},
+		}
+		if err := c.Normalize(); err == nil {
+			t.Error("expected error from mixed config, got nil")
+		}
+	})
+
+	t.Run("empty config is fine", func(t *testing.T) {
+		c := Config{}
+		if err := c.Normalize(); err != nil {
+			t.Fatal(err)
+		}
+		if len(c.Rules) != 0 {
+			t.Errorf("expected no rules, got %d", len(c.Rules))
+		}
+	})
+}
+
 func TestFileExcluded(t *testing.T) {
 	cfg := Config{ExcludeFiles: []string{
 		"internal/config/env.go",
