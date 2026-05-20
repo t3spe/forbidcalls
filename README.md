@@ -22,7 +22,7 @@ name: custom-gcl
 destination: ./bin
 plugins:
   - module: github.com/t3spe/forbidcalls
-    version: v0.2.0
+    version: v0.3.0
 ```
 
 Build a custom golangci-lint binary, then run it:
@@ -55,7 +55,7 @@ linters:
 ### As a standalone CLI
 
 ```sh
-go install github.com/t3spe/forbidcalls/cmd/forbidcalls@v0.2.0
+go install github.com/t3spe/forbidcalls/cmd/forbidcalls@v0.3.0
 ```
 
 Or from source:
@@ -168,10 +168,13 @@ The legacy top-level `forbid` + `exclude_files` schema is still accepted (collap
 | --------------------- | ------------------------------------------------------ |
 | `pkg.Name`            | Exact reference to identifier `Name` in package `pkg`  |
 | `pkg.*`               | Any exported identifier in package `pkg`               |
+| `pkg/...`             | Any exported identifier in `pkg` or any subpackage     |
 | `(*pkg.Type).Method`  | Pointer-receiver method `Method` on `pkg.Type`         |
 | `(pkg.Type).Method`   | Value-receiver method `Method` on `pkg.Type`           |
 
 Package paths use the full Go import path: `net/http`, not `http`.
+
+The `pkg/...` form is useful when you want to lock down a whole module subtree without enumerating each subpackage — e.g. `golang.org/x/crypto/...` matches any reference into `golang.org/x/crypto`, `golang.org/x/crypto/hkdf`, `golang.org/x/crypto/sha3`, etc. A new subpackage import becomes a lint failure automatically.
 
 Matching is by resolved `types.Object`, so all of these are flagged identically:
 

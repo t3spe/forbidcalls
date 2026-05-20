@@ -26,6 +26,10 @@ func TestParsePatterns(t *testing.T) {
 		{"", false, Pattern{}},
 		{"(Notpkg).Do", false, Pattern{}},
 		{"(*os.).Do", false, Pattern{}},
+		// Module subtree form.
+		{"net/http/...", true, Pattern{PkgPath: "net/http", Name: "**", Raw: "net/http/..."}},
+		{"golang.org/x/crypto/...", true, Pattern{PkgPath: "golang.org/x/crypto", Name: "**", Raw: "golang.org/x/crypto/..."}},
+		{"/...", false, Pattern{}},
 	}
 	for _, tc := range tests {
 		ps, err := ParsePatterns([]string{tc.in})

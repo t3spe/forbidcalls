@@ -115,7 +115,21 @@ func run(pass *analysis.Pass, rules []compiledRule) (any, error) {
 
 // matches reports whether obj satisfies pattern p.
 func matches(obj types.Object, p Pattern) bool {
-	if obj.Pkg() == nil || obj.Pkg().Path() != p.PkgPath {
+	if obj.Pkg() == nil {
+		return false
+	}
+
+	// Module subtree pattern: obj's package equals pkg OR is a
+	// subpackage of pkg. By the time we see a cross-package
+	// reference, the identifier is necessarily exported (otherwise
+	// the type checker wouldn't have resolved it), so no extra
+	// Exported() check is needed.
+	if p.Receiver == "" && p.Name == "**" {
+		return obj.Pkg().Path() == p.PkgPath ||
+			strings.HasPrefix(obj.Pkg().Path(), p.PkgPath+"/")
+	}
+
+	if obj.Pkg().Path() != p.PkgPath {
 		return false
 	}
 

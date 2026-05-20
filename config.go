@@ -109,6 +109,18 @@ func parsePattern(s string) (Pattern, error) {
 		return Pattern{}, fmt.Errorf("empty pattern")
 	}
 
+	// Module subtree form: pkg/... matches any exported identifier in pkg
+	// or any subpackage of pkg. Useful for "no one outside this allowlist
+	// may touch anything under golang.org/x/crypto" rules where the
+	// subpackages aren't known in advance.
+	if strings.HasSuffix(s, "/...") {
+		pkgPath := strings.TrimSuffix(s, "/...")
+		if pkgPath == "" {
+			return Pattern{}, fmt.Errorf("expected pkg/...")
+		}
+		return Pattern{PkgPath: pkgPath, Name: "**", Raw: s}, nil
+	}
+
 	// Method form: (Recv).Method or (*Recv).Method where Recv = pkg.Type
 	if strings.HasPrefix(s, "(") {
 		closeParen := strings.Index(s, ")")

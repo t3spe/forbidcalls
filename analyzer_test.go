@@ -50,6 +50,18 @@ func TestIgnoreDirective(t *testing.T) {
 	analysistest.Run(t, analysistest.TestData(), a, "ignored")
 }
 
+// TestModuleSubtree verifies the `pkg/...` form matches identifiers
+// in pkg itself plus any subpackage.
+func TestModuleSubtree(t *testing.T) {
+	a, err := forbidcalls.NewAnalyzer(forbidcalls.Config{
+		Forbid: []string{"net/http/..."},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysistest.Run(t, analysistest.TestData(), a, "subtree")
+}
+
 // TestMultipleRules verifies per-rule exclude_files: two rules each
 // scoped to a different package exclude the other's files, so each
 // only fires inside its own scope.
