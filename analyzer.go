@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/types"
+	"strconv"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -110,7 +111,72 @@ func run(pass *analysis.Pass, rules []compiledRule) (any, error) {
 			}
 		}
 	})
+
+	// Blank imports — `import _ "pkg"` — produce no SelectorExpr, so the
+	// reference-based check above misses them. They're rare but real:
+	// side-effect imports for init() functions (sql drivers, image
+	// codecs, opentelemetry exporters). If the goal is "this package
+	// can't appear in files outside the allowlist", a blank import
+	// counts.
+	//
+	// Non-blank named or default imports either (a) reference some
+	// identifier — caught above — or (b) compile-error as unused, so
+	// they don't reach the linter. Hence we only need to handle the `_`
+	// case here.
+	for _, file := range pass.Files {
+		for _, imp := range file.Imports {
+			if imp.Name == nil || imp.Name.Name != "_" {
+				continue
+			}
+			path, err := strconv.Unquote(imp.Path.Value)
+			if err != nil {
+				continue
+			}
+			pos := pass.Fset.Position(imp.Pos())
+			if ignored[pos.Filename][pos.Line] {
+				continue
+			}
+			for _, rule := range rules {
+				if rule.fileExcluded(pos.Filename) {
+					continue
+				}
+				matched := false
+				for _, p := range rule.patterns {
+					if importMatches(path, p) {
+						if rule.name != "" {
+							pass.Reportf(imp.Pos(),
+								"forbidden blank import %q (rule: %s, pattern: %s)",
+								path, rule.name, p.Raw)
+						} else {
+							pass.Reportf(imp.Pos(),
+								"forbidden blank import %q (pattern: %s)",
+								path, p.Raw)
+						}
+						matched = true
+						break
+					}
+				}
+				if matched {
+					break
+				}
+			}
+		}
+	}
+
 	return nil, nil
+}
+
+// importMatches reports whether a blank-import path is covered by the
+// given pattern. For subtree patterns (`pkg/...`), the path matches if
+// it equals pkg or is a subpackage of pkg. For all other patterns
+// (pkg.Name, pkg.*, method receivers), the path matches if it equals
+// pkg — importing the package is enough to count as "using" anything
+// the pattern would flag.
+func importMatches(path string, p Pattern) bool {
+	if p.Receiver == "" && p.Name == "**" {
+		return path == p.PkgPath || strings.HasPrefix(path, p.PkgPath+"/")
+	}
+	return path == p.PkgPath
 }
 
 // matches reports whether obj satisfies pattern p.

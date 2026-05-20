@@ -22,7 +22,7 @@ name: custom-gcl
 destination: ./bin
 plugins:
   - module: github.com/t3spe/forbidcalls
-    version: v0.3.0
+    version: v0.4.0
 ```
 
 Build a custom golangci-lint binary, then run it:
@@ -55,7 +55,7 @@ linters:
 ### As a standalone CLI
 
 ```sh
-go install github.com/t3spe/forbidcalls/cmd/forbidcalls@v0.3.0
+go install github.com/t3spe/forbidcalls/cmd/forbidcalls@v0.4.0
 ```
 
 Or from source:
@@ -188,6 +188,16 @@ _ = foo.Getenv("X")
 _ = Getenv("X")
 f := os.Getenv; f("X")
 ```
+
+## Blank imports
+
+Forbidden packages used via `import _ "pkg"` are caught too — even though they produce no identifier reference (no `pkg.X` to flag). This handles side-effect imports (sql drivers, opentelemetry exporters, profiling endpoints) that would otherwise be invisible to a reference-based linter.
+
+```go
+import _ "net/http/pprof"   // flagged by a `net/http/...` or `net/http/pprof.*` pattern
+```
+
+Non-blank imports without identifier use (`import "pkg"` with no `pkg.X` anywhere) compile-error as unused, so they never reach the linter — only the blank form needs special handling.
 
 ## Exclusions
 

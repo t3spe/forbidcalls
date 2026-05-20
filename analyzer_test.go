@@ -50,6 +50,20 @@ func TestIgnoreDirective(t *testing.T) {
 	analysistest.Run(t, analysistest.TestData(), a, "ignored")
 }
 
+// TestBlankImport verifies blank imports (`import _ "x"`) trigger
+// diagnostics even though they produce no SelectorExpr reference.
+// Subtree pattern catches a nested subpackage; whole-package pattern
+// catches a leaf.
+func TestBlankImport(t *testing.T) {
+	a, err := forbidcalls.NewAnalyzer(forbidcalls.Config{
+		Forbid: []string{"net/http/...", "syscall.*"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysistest.Run(t, analysistest.TestData(), a, "blankimport")
+}
+
 // TestModuleSubtree verifies the `pkg/...` form matches identifiers
 // in pkg itself plus any subpackage.
 func TestModuleSubtree(t *testing.T) {
