@@ -116,7 +116,7 @@ func parsePattern(s string) (Pattern, error) {
 	if strings.HasSuffix(s, "/...") {
 		pkgPath := strings.TrimSuffix(s, "/...")
 		if pkgPath == "" {
-			return Pattern{}, fmt.Errorf("expected pkg/...")
+			return Pattern{}, fmt.Errorf("missing package path before /...")
 		}
 		return Pattern{PkgPath: pkgPath, Name: "**", Raw: s}, nil
 	}
